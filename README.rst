@@ -27,6 +27,7 @@ in Excel VBA by following simple rules. A Formula here means a set
 of variables and associated code that operates on the variables, 
 such as mathematical expressions.
 
+
 To run a model, you create a model by writing a VBA macro and 
 register Formulas to the model . The results can be output to
 a text file or Excel sheets.
@@ -42,6 +43,7 @@ allowing efficient modeling and proper management of the models.
 Requirements
 ============
 Microsoft Windows XP/Vista/7/8/8.1/10
+
 Microsoft Excel 2000/2003/2007/2010/2013
 
 License
