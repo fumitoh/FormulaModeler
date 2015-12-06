@@ -1,7 +1,7 @@
 FormulaModeler
 ==============
 Formula Modeler (FML) is an Excel add-in tool for 
-building and runnign mathematical models entirely in Excel VBA. 
+building and running mathematical models entirely in Excel VBA. 
 FML is open-source and written entirely in VBA.
 
 Motivation
