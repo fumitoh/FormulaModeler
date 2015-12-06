@@ -51,6 +51,7 @@ Public Enum fmlFindOption
 End Enum
 
 
+
 'Public Enum fmlArrayMappingType
 '
 '    fmlMapIndex
@@ -232,13 +233,16 @@ End Sub
 
 
 
-Public Sub NewJaggedArray(Target As Variant, Source As Variant)
+Public Sub NewJaggedArray(Target As Variant, Source As Variant, Optional KeyLength As Variant = Null, Optional ValLBound As Variant = Null)
     
     Dim src_buf As Variant
     Dim table_rows As Long, table_cols As Long
-    Dim lb1 As Long, ub1 As Long, lb2 As Long, ub2 As Long
+    Dim lb1 As Long, ub1 As Long, lb2 As Long, ub2 As Long, ub2_key As Long
     Dim row As Long, col As Long
-    Dim ind As Variant
+    Dim ind As Variant, val As Variant, val_lb As Long, val_ub As Long, key_len As Long
+    Dim val_t As VbVarType
+    Dim i As Long
+    Dim time_last_checked
     
     On Error GoTo HandleError:
 
@@ -261,17 +265,81 @@ Public Sub NewJaggedArray(Target As Variant, Source As Variant)
     table_rows = ub1 - lb1 + 1
     table_cols = ub2 - lb2 + 1
     
-    ReDim ind(0 To table_cols - 1)
+    
+    If IsEmpty(KeyLength) Or IsNull(KeyLength) Or table_cols <= KeyLength Then
+    
+        val = Empty
+        val_t = vbEmpty
+        key_len = table_cols
+    
+    ElseIf table_cols = KeyLength + 1 Then  'Value has 1 length
+        
+        If IsEmpty(ValLBound) Or IsNull(ValLBound) Then 'Value is a scalar
+        
+            val_t = vbDouble 'meaning scalar
+        
+        Else 'Value is an one-element array
+            
+            val_t = vbArray
+            val_lb = ValLBound
+            val_ub = ValLBound
+        
+        End If
+        
+        key_len = KeyLength
+            
+    Else 'table_cols > KeyLength + 1    'Value is an array of size > 1.
+    
+        val_t = vbArray
+        If IsEmpty(ValLBound) Or IsNull(ValLBound) Then val_lb = 0 Else val_lb = ValLBound
+        
+        val_ub = table_cols - KeyLength + val_lb - 1
+        
+        key_len = KeyLength
+            
+    End If
+    
+    ReDim ind(0 To key_len - 1)
+    
+    If val_t = vbArray Then ReDim val(val_lb To val_ub)
+
     
     For row = lb1 To ub1
+    
+        If DateDiff("s", time_last_checked, Time) > 1 Then
         
-        For col = lb2 To ub2
+            CheckEvents
+            time_last_checked = Time
+        
+        End If
+            
+        
+        For col = lb2 To lb2 + key_len - 1
             
             ind(col - lb2) = src_buf(row, col)
             
         Next col
+        
+        'Create val
+        If val_t = vbEmpty Then
+        
+            val = Empty
+            
+        ElseIf val_t = vbDouble Then
+        
+            val = src_buf(row, ub2)
+        
+        ElseIf val_t = vbArray Then
+        
+            For i = val_lb To val_ub
+            
+                val(i) = src_buf(row, lb2 + key_len + i - val_lb)
+            
+            Next i
+        
+        End If
     
-        set_to_nested_array Target, ind, Empty
+        set_to_nested_array Target, ind, val
     
     Next row
             
@@ -337,14 +405,16 @@ Public Sub NewLookupTable(Target As Variant, Source As Variant, KeyLength As Lon
     End If
     
     var_count = table_cols - KeyLength
-    ReDim Target(VarLBound To VarLBound + var_count - 1) As Variant
+    ReDim Target(VarLBound To VarLBound + var_count) As Variant
+    
+    Target(VarLBound + var_count) = KeyLength   'Store Key length in the last element
     
     For var_ind = VarLBound To VarLBound + var_count - 1
         
         For key_ind = lb1 To ub1
         
-            If modUtil__.is_numeric(src_buf(key_ind, var_ind - VarLBound + lb2 + KeyLength)) Then
-                            
+            If modUtil__.is_numeric(src_buf(key_ind, var_ind - VarLBound + lb2 + KeyLength)) _
+                Or modUtil__.is_xnull_str(src_buf(key_ind, var_ind - VarLBound + lb2 + KeyLength)) Then
                             
                 ReDim extl_key(0 To KeyLength - 1)
                 
@@ -355,6 +425,9 @@ Public Sub NewLookupTable(Target As Variant, Source As Variant, KeyLength As Lon
                 Next i
                 
                 get_internal_key internal_key, extl_key, KeyLength
+                
+                'If var_ind = 2 And key_ind = 7 Then Stop
+                                
                 If Not set_to_nested_array(Target(var_ind), internal_key, src_buf(key_ind, lb2 + KeyLength + var_ind - VarLBound)) Then
                 
                     Err.Raise Number:=fmlInvalidArgument, _
@@ -469,7 +542,7 @@ Private Function set_to_nested_array(targ_array As Variant, Key As Variant, arg_
             
         Next i
         
-        new_array(key_elm) = arg_val
+        'new_array(key_elm) = arg_val
         targ_array = new_array
         
     
@@ -488,8 +561,12 @@ Private Function set_to_nested_array(targ_array As Variant, Key As Variant, arg_
     
         If key_elm_exists Then
         
-            set_to_nested_array = False
-            Exit Function
+            If Not IsEmpty(targ_array(key_elm)) Then
+        
+                set_to_nested_array = False
+                Exit Function
+                
+            End If
                      
         End If
 
@@ -526,22 +603,44 @@ Public Function LookupExact(Result As Variant, Table As Variant, ByVal VarIndex 
 
     On Error GoTo HandleError:
 
-    If UBound(Key) < LBound(Key) Then
+'    If UBound(Key) < LBound(Key) Then
+'
+'        Err.Raise Number:=fmlInvalidArgument, _
+'                 Source:=PROJ_NAME, _
+'                 Description:=modErrInfo__.errstr_InvalidArgument + "Key"
+'
+'    End If
     
-        Err.Raise Number:=fmlInvalidArgument, _
-                 Source:=PROJ_NAME, _
-                 Description:=modErrInfo__.errstr_InvalidArgument + "Key"
-        
-    ElseIf VarIndex < LBound(Table) Or VarIndex > UBound(Table) Then
+    If VarIndex < LBound(Table) Or VarIndex >= UBound(Table) Then
         
         Err.Raise Number:=fmlInvalidArgument, _
                  Source:=PROJ_NAME, _
                  Description:=modErrInfo__.errstr_InvalidArgument + "VarIndex " + CStr(VarIndex)
                 
     End If
+    
+    'Create external_key
+    key_len = Table(UBound(Table))      'Key length is stored in the last element of Table
+    
+    ReDim external_key(0 To key_len - 1)
+    
+    For i = 0 To key_len - 1
+    
+        If i <= UBound(Key) Then
         
-    external_key = Key
-    key_len = UBound(Key) - LBound(Key) + 1
+            external_key(i) = Key(i)
+            
+        Else
+        
+            external_key(i) = Empty     'Extend with Empty if Key is shorter than expected
+            
+        End If
+    
+    Next i
+        
+'    external_key = Key
+'    key_len = UBound(Key) - LBound(Key) + 1
+    
     get_internal_key internal_key, external_key, key_len
     LookupExact = get_from_nested_array(Result, Table(VarIndex), internal_key)
         
@@ -559,69 +658,6 @@ HandleError:
 End Function
 
 
-Private Function LookupMatchBAK(Result As Variant, Table As Variant, ByVal VarIndex As Long, ParamArray Key() As Variant) As Boolean
-
-    Dim key_len As Long
-    Dim i As Long
-    Dim internal_key As Variant
-    Dim external_key As Variant
-    
-    Dim key_lb As Long, key_ub As Long
-
-    On Error GoTo HandleError:
-    
-    key_ub = UBound(Key)
-    key_lb = LBound(Key)
-
-    If key_ub < key_lb Then
-    
-        Err.Raise Number:=fmlInvalidArgument, _
-                 Source:=PROJ_NAME, _
-                 Description:=modErrInfo__.errstr_InvalidArgument + "Key"
-        
-    ElseIf VarIndex < LBound(Table) Or VarIndex > UBound(Table) Then
-        
-        Err.Raise Number:=fmlInvalidArgument, _
-                 Source:=PROJ_NAME, _
-                 Description:=modErrInfo__.errstr_InvalidArgument + "VarIndex " + CStr(VarIndex)
-                
-    End If
-        
-    key_len = key_ub - key_lb + 1
-    external_key = Key
-    get_internal_key internal_key, external_key, key_len
-    LookupMatchBAK = get_from_nested_array(Result, Table(VarIndex), internal_key)
-
-    If LookupMatchBAK Then Exit Function
-
-    i = key_ub
-    
-    Do While i >= key_lb
-    
-        If modUtil__.is_numeric(external_key(i)) Then
-    
-           external_key(i) = Null
-           get_internal_key internal_key, external_key, key_len
-           LookupMatchBAK = get_from_nested_array(Result, Table(VarIndex), internal_key)
-           If LookupMatchBAK Then Exit Function
-    
-        End If
-        
-        i = i - 1
-    Loop
-        
-    Exit Function
-
-HandleError:
-    
-    modErrInfo__.FuncID = id_LookupMatch__
-    Err.Raise Number:=Err.Number, _
-                Source:=Err.Source, _
-                Description:=Err.Description, _
-                HelpFile:=Err.HelpFile, _
-                HelpContext:=Err.HelpContext
-
-End Function
 
 Public Function LookupMatch(Result As Variant, Table As Variant, ByVal VarIndex As Long, ParamArray Key() As Variant) As Boolean
 
@@ -636,29 +672,60 @@ Public Function LookupMatch(Result As Variant, Table As Variant, ByVal VarIndex 
 
     On Error GoTo HandleError:
     
-    key_ub = UBound(Key)
-    key_lb = LBound(Key)
-
-    If key_ub < key_lb Then
+'    key_ub = UBound(Key)
+'    key_lb = LBound(Key)
+'
+'    If key_ub < key_lb Then
+'
+'        Err.Raise Number:=fmlInvalidArgument, _
+'                 Source:=PROJ_NAME, _
+'                 Description:=modErrInfo__.errstr_InvalidArgument + "Key"
+'
+'    End If
     
-        Err.Raise Number:=fmlInvalidArgument, _
-                 Source:=PROJ_NAME, _
-                 Description:=modErrInfo__.errstr_InvalidArgument + "Key"
-        
-    ElseIf VarIndex < LBound(Table) Or VarIndex > UBound(Table) Then
+'    If VarIndex < LBound(Table) Or VarIndex >= UBound(Table) Then
+'
+'        Err.Raise Number:=fmlInvalidArgument, _
+'                 Source:=PROJ_NAME, _
+'                 Description:=modErrInfo__.errstr_InvalidArgument + "VarIndex " + CStr(VarIndex)
+'
+'    End If
+'
+'    key_len = key_ub - key_lb + 1
+'    external_key = Key
+    
+    If VarIndex < LBound(Table) Or VarIndex >= UBound(Table) Then
         
         Err.Raise Number:=fmlInvalidArgument, _
                  Source:=PROJ_NAME, _
                  Description:=modErrInfo__.errstr_InvalidArgument + "VarIndex " + CStr(VarIndex)
                 
     End If
+    
+    'Create external_key
+    key_len = Table(UBound(Table))      'Key length is stored in the last element of Table
+    
+    ReDim external_key(0 To key_len - 1)
+    
+    For i = 0 To key_len - 1
+    
+        If i <= UBound(Key) Then
         
-    key_len = key_ub - key_lb + 1
-    external_key = Key
+            external_key(i) = Key(i)
+            
+        Else
+        
+            external_key(i) = Empty     'Extend with Empty if Key is shorter than expected
+            
+        End If
     
-    ReDim ex_nil2inc_nill(0 To key_ub - key_lb) As Long
+    Next i
     
-    For i = key_lb To key_ub
+    ReDim ex_nil2inc_nill(0 To key_len - 1) As Long  'ex_nil2inc_nill: Stores the indexes of non-nill elements in external_key
+    
+    key_len_exnill = 0
+    
+    For i = 0 To key_len - 1
     
         If modUtil__.is_numeric(external_key(i)) Then
         
@@ -672,7 +739,7 @@ Public Function LookupMatch(Result As Variant, Table As Variant, ByVal VarIndex 
     'Loop over Number of Matching elements
     For i = key_len_exnill To 0 Step -1
     
-        ReDim lex_order(0 To key_len_exnill - 1) As Boolean
+        If key_len_exnill > 0 Then ReDim lex_order(0 To key_len_exnill - 1) As Boolean
         
         'Initialize to True sequence
         For j = 0 To i - 1
@@ -724,6 +791,19 @@ Private Function incr_lexico_order(v As Variant) As Boolean
     Dim v_lb As Long, v_ub As Long, i As Long, j As Long
     Dim right_empty As Boolean
     Dim true_count As Long
+    
+    
+    If Not IsArray(v) Then
+    
+        If IsEmpty(v) Then
+        
+            incr_lexico_order = False
+            Exit Function
+        
+        End If
+        
+    End If
+    
     
     v_lb = LBound(v)
     v_ub = UBound(v)
@@ -845,7 +925,7 @@ End Function
 
 
 
-Private Function get_recursive(Val As Variant, Var As Variant, ByVal ind As Variant) As Boolean
+Private Function get_recursive(val As Variant, var As Variant, ByVal ind As Variant) As Boolean
 
     'Assumes Ubound(ind) = 0
 
@@ -854,13 +934,13 @@ Private Function get_recursive(Val As Variant, Var As Variant, ByVal ind As Vari
     Dim ind_next As Variant
     Dim i As Long
 
-    dim_size = modArrSpt__.NumberOfArrayDimensions(Var)
+    dim_size = modArrSpt__.NumberOfArrayDimensions(var)
     ind_len = UBound(ind) + 1
     
     'Index is too short
     If ind_len < dim_size Then
         
-        Val = Empty
+        val = Empty
         get_recursive = False
         Exit Function
         
@@ -883,27 +963,27 @@ Private Function get_recursive(Val As Variant, Var As Variant, ByVal ind As Vari
     
     Case 0
     
-        Val = Var
+        val = var
         get_recursive = True
         Exit Function
     
     Case 1
     
-        If Not IsArray(Var(ind(0))) Then
+        If Not IsArray(var(ind(0))) Then
         
             get_recursive = True
-            Val = Var(ind(0))
+            val = var(ind(0))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0)), ind_next)
             Exit Function
             
         End If
@@ -911,189 +991,189 @@ Private Function get_recursive(Val As Variant, Var As Variant, ByVal ind As Vari
     
     Case 2
     
-        If Not IsArray(Var(ind(0), ind(1))) Then
+        If Not IsArray(var(ind(0), ind(1))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1))
+            val = var(ind(0), ind(1))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1)), ind_next)
             Exit Function
             
         End If
     
     Case 3
     
-        If Not IsArray(Var(ind(0), ind(1), ind(2))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2))
+            val = var(ind(0), ind(1), ind(2))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2)), ind_next)
             Exit Function
             
         End If
     
     Case 4
     
-        If Not IsArray(Var(ind(0), ind(1), ind(2), ind(3))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2), ind(3))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2), ind(3))
+            val = var(ind(0), ind(1), ind(2), ind(3))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2), ind(3))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2), ind(3))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2), ind(3)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2), ind(3)), ind_next)
             Exit Function
             
         End If
     
     Case 5
     
-        If Not IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2), ind(3), ind(4))
+            val = var(ind(0), ind(1), ind(2), ind(3), ind(4))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2), ind(3), ind(4)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2), ind(3), ind(4)), ind_next)
             Exit Function
             
         End If
     
     Case 6
     
-        If Not IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5))
+            val = var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5)), ind_next)
             Exit Function
             
         End If
     
     Case 7
     
-        If Not IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6))
+            val = var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6)), ind_next)
             Exit Function
             
         End If
         
     Case 8
     
-        If Not IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7))
+            val = var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7)), ind_next)
             Exit Function
             
         End If
     
     Case 9
         
-        If Not IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8))
+            val = var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8)), ind_next)
             Exit Function
             
         End If
     
     Case 10
         
-        If Not IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9))) Then
+        If Not IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9))) Then
         
             get_recursive = True
-            Val = Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9))
+            val = var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9))
             Exit Function
             
-        ElseIf ind_len = dim_size And IsArray(Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9))) Then
+        ElseIf ind_len = dim_size And IsArray(var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9))) Then
         
             get_recursive = False
-            Val = Empty
+            val = Empty
             Exit Function
             
         Else
         
-            get_recursive = get_recursive(Val, Var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9)), ind_next)
+            get_recursive = get_recursive(val, var(ind(0), ind(1), ind(2), ind(3), ind(4), ind(5), ind(6), ind(7), ind(8), ind(9)), ind_next)
             Exit Function
             
         End If
@@ -1101,7 +1181,7 @@ Private Function get_recursive(Val As Variant, Var As Variant, ByVal ind As Vari
     Case Else
     
         get_recursive = False
-        Val = Empty
+        val = Empty
         Exit Function
     
     End Select
@@ -1674,6 +1754,12 @@ Public Sub NestArray(Target As Variant, ByVal Source As Variant, NestPosition As
     
     On Error GoTo HandleError:
     
+    If IsObject(Source) Then
+    
+        Source = Source
+        
+    End If
+    
     If Not IsArray(Source) Then
     
         Err.Raise Number:=fmlInvalidArgument, _
@@ -2169,7 +2255,7 @@ End Sub
 Public Function FindVal( _
     Result As Variant, _
     ByVal Key As Variant, _
-    ByVal Var As Variant, _
+    ByVal var As Variant, _
     ColIndex As Long, _
     Optional FindOperator As fmlCompareOp = fmlEqualTo, _
     Optional FindOption As fmlFindOption = 0) As Boolean
@@ -2184,7 +2270,7 @@ Public Function FindVal( _
     
     FindVal = False
     
-    arr_in = Var
+    arr_in = var
     
     If Not IsArray(arr_in) Then Exit Function   'TODO Throw an Error
     If modArrSpt__.NumberOfArrayDimensions(arr_in) <> 2 Then Exit Function  'TODO Throw an Error
@@ -3156,6 +3242,7 @@ Public Sub MultDimArray( _
     ParamArray Index() As Variant)
 
     'Example of Index(): 0, Array(1, 10), 0, Array(1, 2)
+    'Souce is by Vale in order to not change Souce when Range in Variant is passed as Souce.
 
     Dim ind As Variant
     Dim arr_in As Variant, arr_out As Variant

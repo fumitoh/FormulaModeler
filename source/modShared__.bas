@@ -29,11 +29,11 @@ Option Private Module
 
 Public Const PROJ_NAME = "FML" 'Must be Project Name
 Public Const MAJOR_VER_NO = 0
-Public Const MINOR_VER_NO = 4
+Public Const MINOR_VER_NO = 5
 Public Const REVISION_NO = 0
 
-Public Const VERSION_STRING = "0.4.0"
-Public Const LICENSE_EXPIRE_ON = #12/21/2016#
+Public Const VERSION_STRING = "0.5.0"
+'Public Const LICENSE_EXPIRE_ON = #12/21/2016#
 
 
 Public Const MAX_DIM_COUNT = 10

@@ -2064,7 +2064,7 @@ Public Function NumberOfArrayDimensions(Arr As Variant) As Integer
 ' has 0 dimensions. This condition can also be tested with IsArrayEmpty.
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 Dim Ndx As Integer
-Dim Res As Integer
+Dim Res As Long     'Added by Fumito
 On Error Resume Next
 ' Loop, increasing the dimension index Ndx, until an error occurs.
 ' An error will occur when Ndx exceeds the number of dimension

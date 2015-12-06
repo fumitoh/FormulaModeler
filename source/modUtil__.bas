@@ -65,11 +65,11 @@ Public Function redim_nested_array(a As Variant, new_ub As Long, is_preserve As 
 
     If is_preserve = True Then
 
-        ReDim Preserve a(new_ub)
+        ReDim Preserve a(LBound(a) To new_ub)
         
     Else
         
-        ReDim a(new_ub)
+        ReDim a(LBound(a) To new_ub)
     
     End If
 
@@ -81,13 +81,13 @@ End Function
 
 
 
-Public Function is_whole_number(Var As Variant) As Boolean
+Public Function is_whole_number(var As Variant) As Boolean
 
     Dim var_type As Long
 
     is_whole_number = False
 
-    var_type = VarType(Var)
+    var_type = VarType(var)
 
     If var_type = vbBoolean Or _
         var_type = vbInteger Or _
@@ -97,7 +97,7 @@ Public Function is_whole_number(Var As Variant) As Boolean
         
     ElseIf (var_type = vbDouble Or var_type = vbSingle) Then
     
-        If Var = CLng(Var) Then
+        If var = CLng(var) Then
            
             is_whole_number = True
         Else
@@ -113,17 +113,19 @@ Public Function is_whole_number(Var As Variant) As Boolean
 
 End Function
 
-Public Function is_numeric(Var As Variant) As Boolean
+Public Function is_numeric(var As Variant) As Boolean
 
     Dim var_type As Long
     
-    var_type = VarType(Var)
+    var_type = VarType(var)
     
     If var_type = vbBoolean Or _
         var_type = vbInteger Or _
         var_type = vbLong Or _
         var_type = vbSingle Or _
-        var_type = vbDouble Then
+        var_type = vbDouble Or _
+        var_type = vbDate Or _
+        var_type = vbCurrency Then
     
         is_numeric = True
         
@@ -133,6 +135,28 @@ Public Function is_numeric(Var As Variant) As Boolean
     
     End If
 
+End Function
+
+Public Function is_xnull_str(var As Variant) As Boolean
+
+    Dim var_type As Long
+    
+    var_type = VarType(var)
+    
+    If Not var_type = vbString Then
+    
+        is_xnull_str = False
+        
+    ElseIf var = "" Then
+    
+        is_xnull_str = False
+        
+    Else
+    
+        is_xnull_str = True
+    
+    End If
+    
 End Function
 
 

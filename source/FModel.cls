@@ -544,7 +544,9 @@ End Sub
 
 
 Public Sub SetArrayItr(ByVal Source As Variant)
-    
+'Souce is by Vale in order to not change Souce when Range in Variant is passed as Souce.
+    Dim dim_count As Long, i As Long
+    Dim src_2dim
     
     On Error GoTo HandleError:
     
@@ -555,12 +557,47 @@ Public Sub SetArrayItr(ByVal Source As Variant)
     
     End If
     
+    If Not IsArray(Source) Then
+    
+        Err.Raise Number:=fmlInvalidArgument, _
+                  Source:=PROJ_NAME, _
+                  Description:=modErrInfo__.errstr_InvalidArgument + "Source"
+    End If
+    
     If Not modArrSpt__.IsArrayAllocated(Source) Then
     
         Err.Raise Number:=fmlInvalidArgument, _
                   Source:=PROJ_NAME, _
                   Description:=modErrInfo__.errstr_InvalidArgument + "Source"
     End If
+    
+    dim_count = modArrSpt__.NumberOfArrayDimensions(Source)
+    
+    If dim_count = 1 Then   'Make src 2dim
+    
+        ReDim src_2dim(LBound(Source) To UBound(Source), 0 To 0)
+    
+        For i = LBound(Source) To UBound(Source)
+    
+            src_2dim(i, 0) = Source(i)
+    
+        Next i
+        
+        Source = src_2dim
+    
+    ElseIf dim_count = 2 Then
+        
+        'Do nothing.
+        
+    Else
+    
+        Err.Raise Number:=fmlInvalidArgument, _
+                  Source:=PROJ_NAME, _
+                  Description:=modErrInfo__.errstr_InvalidArgument + "Source"
+    
+    End If
+    
+    
     
     If m_CurrItrLevel + 1 > MAX_ITERATION_LEVEL Then
     
