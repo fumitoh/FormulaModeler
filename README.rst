@@ -6,8 +6,8 @@ FML is open-source and written entirely in VBA.
 
 Motivation
 ==========
-It is hard to maintain the integrity of complex models such 
-as actuarial models on 2-dimensional spreadsheets, 
+On 2-dimensional spreadsheets, it's hard to maintain the integrity
+of complex numerical models such as actuarial models,  
 as those models get cluttered with lots of formulas.
 By writing your model in Excel VBA using FML, 
 you can build beautifully structured,
